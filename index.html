@@ -313,6 +313,7 @@
   <div class="panel" id="tab-json">
     <div class="options-row">
       <label><input type="checkbox" id="json-urldecode" checked> URLデコードしてから整形</label>
+      <label><input type="checkbox" id="json-unescape"> JSONエスケープを解除してから整形</label>
       <label><input type="checkbox" id="json-sort"> キーをソート</label>
       <span style="font-size:13px; color:var(--text-muted)">インデント:</span>
       <select id="json-indent">
@@ -326,6 +327,7 @@
       <button class="btn btn-primary" id="json-format-btn">整形</button>
       <button class="btn btn-ghost" id="json-urldecode-only-btn">URLデコードのみ</button>
       <button class="btn btn-ghost" id="json-minify-btn">圧縮</button>
+      <button class="btn btn-ghost" id="json-escape-minify-btn">エスケープして1行化</button>
       <button class="btn btn-ghost" id="json-clear-btn">クリア</button>
       <span class="status" id="json-status" style="display:none"></span>
     </div>
@@ -474,20 +476,36 @@ function getIndent() {
   return v === 'tab' ? '\t' : parseInt(v);
 }
 
-function doFormatJSON(minify = false) {
-  const rawInput = document.getElementById('json-input').value.trim();
-  const output   = document.getElementById('json-output');
+function jsonUnescape(str) {
+  // \"key\" のようなエスケープ済み文字列をJSONとして復元する
+  // JSON文字列としてパースすることで一括処理（\n \t \uXXXX なども対応）
+  return JSON.parse('"' + str + '"');
+}
 
+function prepareInput() {
+  const rawInput = document.getElementById('json-input').value.trim();
+  if (!rawInput) return null;
+  let text = document.getElementById('json-urldecode').checked ? tryUrlDecode(rawInput) : rawInput;
+  if (document.getElementById('json-unescape').checked) text = jsonUnescape(text);
+  return text;
+}
+
+function doFormatJSON(minify = false) {
+  const output = document.getElementById('json-output');
   showError('json-error', '');
   output.classList.remove('error');
 
-  if (!rawInput) return;
+  let text;
+  try {
+    text = prepareInput();
+  } catch (e) {
+    showError('json-error', 'エスケープ解除エラー: ' + e.message);
+    showStatus('json-status', false, '失敗');
+    return;
+  }
+  if (text === null) return;
 
-  const urlDecode = document.getElementById('json-urldecode').checked;
-  const sortKeys  = document.getElementById('json-sort').checked;
-
-  let text = urlDecode ? tryUrlDecode(rawInput) : rawInput;
-
+  const sortKeys = document.getElementById('json-sort').checked;
   try {
     let parsed = JSON.parse(text);
     if (sortKeys) parsed = sortObjectKeys(parsed);
@@ -495,6 +513,35 @@ function doFormatJSON(minify = false) {
       ? JSON.stringify(parsed)
       : JSON.stringify(parsed, null, getIndent());
     showStatus('json-status', true, minify ? '圧縮完了' : '整形完了');
+  } catch (e) {
+    output.value = '';
+    output.classList.add('error');
+    showError('json-error', 'JSONパースエラー: ' + e.message);
+    showStatus('json-status', false, '失敗');
+  }
+}
+
+function doEscapeMinify() {
+  const output = document.getElementById('json-output');
+  showError('json-error', '');
+  output.classList.remove('error');
+
+  let text;
+  try {
+    text = prepareInput();
+  } catch (e) {
+    showError('json-error', 'エスケープ解除エラー: ' + e.message);
+    showStatus('json-status', false, '失敗');
+    return;
+  }
+  if (text === null) return;
+
+  try {
+    const parsed   = JSON.parse(text);
+    const minified = JSON.stringify(parsed);
+    // JSON文字列としてシリアライズして外側のクォートだけ除去 → \"key\":\"val\" 形式
+    output.value   = JSON.stringify(minified).slice(1, -1);
+    showStatus('json-status', true, 'エスケープ完了');
   } catch (e) {
     output.value = '';
     output.classList.add('error');
@@ -521,6 +568,7 @@ function doUrlDecodeOnly() {
 
 document.getElementById('json-format-btn').addEventListener('click', () => doFormatJSON(false));
 document.getElementById('json-minify-btn').addEventListener('click', () => doFormatJSON(true));
+document.getElementById('json-escape-minify-btn').addEventListener('click', doEscapeMinify);
 document.getElementById('json-urldecode-only-btn').addEventListener('click', doUrlDecodeOnly);
 document.getElementById('json-input').addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') doFormatJSON(false);
