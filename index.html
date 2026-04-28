@@ -277,6 +277,7 @@
       </select>
       <label><input type="checkbox" id="sql-uppercase" checked> キーワード大文字</label>
       <label><input type="checkbox" id="sql-indent2"> インデント2スペース</label>
+      <label><input type="checkbox" id="sql-join-on-newline" checked> JOIN の ON を改行</label>
     </div>
 
     <div class="action-bar">
@@ -405,6 +406,18 @@ async function pasteText(targetId) {
 }
 
 // ── SQL ──────────────────────────────────────────────────
+function postProcessJoinOn(sql) {
+  return sql.split('\n').map(line => {
+    if (!/\bJOIN\b/i.test(line)) return line;
+    const onIdx = line.search(/\s+ON\s+/i);
+    if (onIdx === -1) return line;
+    const indent = line.match(/^(\s*)/)[1];
+    const beforeOn = line.substring(0, onIdx);
+    const onPart   = line.substring(onIdx).replace(/^\s+ON\s+/i, 'ON ');
+    return beforeOn + '\n' + indent + '  ' + onPart;
+  }).join('\n');
+}
+
 function formatSQL() {
   const input = document.getElementById('sql-input').value.trim();
   const output = document.getElementById('sql-output');
@@ -419,13 +432,16 @@ function formatSQL() {
   const upper    = document.getElementById('sql-uppercase').checked;
   const indent   = document.getElementById('sql-indent2').checked ? '  ' : '    ';
 
+  const joinOnNewline = document.getElementById('sql-join-on-newline').checked;
+
   try {
-    const result = sqlFormatter.format(input, {
+    let result = sqlFormatter.format(input, {
       language: dialect,
       keywordCase: upper ? 'upper' : 'preserve',
       indentStyle: 'standard',
       tabWidth: indent.length,
     });
+    if (joinOnNewline) result = postProcessJoinOn(result);
     output.value = result;
     showStatus('sql-status', true, '整形完了');
   } catch (e) {
