@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dev Formatter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #242736;
+      --border: #2e3148;
+      --accent: #7c6af7;
+      --accent-hover: #6a58e0;
+      --text: #e2e4f0;
+      --text-muted: #7a7f99;
+      --success: #3ecf8e;
+      --error: #f77066;
+      --radius: 8px;
+      --font-mono: 'Consolas', 'Menlo', 'Monaco', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+    }
+
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--text);
+    }
+
+    header .badge {
+      font-size: 11px;
+      background: var(--accent);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 2px;
+      padding: 16px 24px 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 8px 20px;
+      cursor: pointer;
+      border-radius: var(--radius) var(--radius) 0 0;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab-btn:hover { color: var(--text); }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--bg);
+    }
+
+    main {
+      flex: 1;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .panel { display: none; flex: 1; flex-direction: column; gap: 16px; }
+    .panel.active { display: flex; }
+
+    .options-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .options-row label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .options-row label input[type=checkbox] {
+      accent-color: var(--accent);
+      width: 15px;
+      height: 15px;
+    }
+
+    .options-row select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 10px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      flex: 1;
+    }
+
+    @media (max-width: 800px) {
+      .editor-grid { grid-template-columns: 1fr; }
+    }
+
+    .editor-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .pane-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .pane-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    .pane-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    textarea {
+      flex: 1;
+      min-height: 400px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      padding: 14px 16px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+    textarea[readonly] { background: var(--surface2); cursor: default; }
+    textarea.error { border-color: var(--error); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border-radius: var(--radius);
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+
+    .btn-ghost {
+      background: var(--surface2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { color: var(--text); background: var(--border); }
+
+    .btn-icon {
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .action-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .status {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+    .status.ok  { background: rgba(62,207,142,0.15); color: var(--success); }
+    .status.err { background: rgba(247,112,102,0.15); color: var(--error); }
+
+    .error-msg {
+      font-size: 12px;
+      color: var(--error);
+      font-family: var(--font-mono);
+      padding: 8px 12px;
+      background: rgba(247,112,102,0.08);
+      border-radius: var(--radius);
+      border: 1px solid rgba(247,112,102,0.2);
+      display: none;
+    }
+    .error-msg.visible { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Dev Formatter</h1>
+  <span class="badge">社内ツール</span>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="sql">SQL</button>
+  <button class="tab-btn" data-tab="json">JSON</button>
+</div>
+
+<main>
+
+  <!-- SQL Panel -->
+  <div class="panel active" id="tab-sql">
+    <div class="options-row">
+      <span style="font-size:13px; color:var(--text-muted)">方言:</span>
+      <select id="sql-dialect">
+        <option value="sql">標準SQL</option>
+        <option value="mysql">MySQL</option>
+        <option value="postgresql" selected>PostgreSQL</option>
+        <option value="sqlite">SQLite</option>
+        <option value="oracle">Oracle</option>
+        <option value="transactsql">T-SQL (SQL Server)</option>
+      </select>
+      <label><input type="checkbox" id="sql-uppercase" checked> キーワード大文字</label>
+      <label><input type="checkbox" id="sql-indent2"> インデント2スペース</label>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" id="sql-format-btn">整形</button>
+      <button class="btn btn-ghost" id="sql-clear-btn">クリア</button>
+      <span class="status" id="sql-status" style="display:none"></span>
+    </div>
+
+    <div class="error-msg" id="sql-error"></div>
+
+    <div class="editor-grid">
+      <div class="editor-pane">
+        <div class="pane-header">
+          <span class="pane-label">入力</span>
+          <div class="pane-actions">
+            <button class="btn btn-ghost btn-icon" id="sql-paste-btn">貼り付け</button>
+          </div>
+        </div>
+        <textarea id="sql-input" placeholder="整形したいSQLを貼り付けてください..."></textarea>
+      </div>
+      <div class="editor-pane">
+        <div class="pane-header">
+          <span class="pane-label">出力</span>
+          <div class="pane-actions">
+            <button class="btn btn-ghost btn-icon" id="sql-copy-btn">コピー</button>
+          </div>
+        </div>
+        <textarea id="sql-output" readonly placeholder="整形結果がここに表示されます"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- JSON Panel -->
+  <div class="panel" id="tab-json">
+    <div class="options-row">
+      <label><input type="checkbox" id="json-urldecode" checked> URLデコードしてから整形</label>
+      <label><input type="checkbox" id="json-sort"> キーをソート</label>
+      <span style="font-size:13px; color:var(--text-muted)">インデント:</span>
+      <select id="json-indent">
+        <option value="2" selected>2スペース</option>
+        <option value="4">4スペース</option>
+        <option value="tab">タブ</option>
+      </select>
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" id="json-format-btn">整形</button>
+      <button class="btn btn-ghost" id="json-urldecode-only-btn">URLデコードのみ</button>
+      <button class="btn btn-ghost" id="json-minify-btn">圧縮</button>
+      <button class="btn btn-ghost" id="json-clear-btn">クリア</button>
+      <span class="status" id="json-status" style="display:none"></span>
+    </div>
+
+    <div class="error-msg" id="json-error"></div>
+
+    <div class="editor-grid">
+      <div class="editor-pane">
+        <div class="pane-header">
+          <span class="pane-label">入力</span>
+          <div class="pane-actions">
+            <button class="btn btn-ghost btn-icon" id="json-paste-btn">貼り付け</button>
+          </div>
+        </div>
+        <textarea id="json-input" placeholder="整形したいJSONを貼り付けてください...&#10;&#10;URLエンコードされたJSONもそのまま貼り付け可能です。"></textarea>
+      </div>
+      <div class="editor-pane">
+        <div class="pane-header">
+          <span class="pane-label">出力</span>
+          <div class="pane-actions">
+            <button class="btn btn-ghost btn-icon" id="json-copy-btn">コピー</button>
+          </div>
+        </div>
+        <textarea id="json-output" readonly placeholder="整形結果がここに表示されます"></textarea>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- sql-formatter via CDN (処理はすべてブラウザ内で完結、データ送信なし) -->
+<script src="https://cdn.jsdelivr.net/npm/sql-formatter@15/dist/sql-formatter.min.js"></script>
+<script>
+// ── タブ切り替え ──────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── ユーティリティ ────────────────────────────────────────
+function showStatus(id, ok, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status ' + (ok ? 'ok' : 'err');
+  el.style.display = 'inline-block';
+  setTimeout(() => { el.style.display = 'none'; }, 2500);
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  if (msg) { el.textContent = msg; el.classList.add('visible'); }
+  else      { el.textContent = ''; el.classList.remove('visible'); }
+}
+
+async function copyText(text, statusId) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showStatus(statusId, true, 'コピーしました');
+  } catch {
+    showStatus(statusId, false, 'コピー失敗');
+  }
+}
+
+async function pasteText(targetId) {
+  try {
+    const text = await navigator.clipboard.readText();
+    document.getElementById(targetId).value = text;
+  } catch {
+    // クリップボード権限がない場合は無視
+  }
+}
+
+// ── SQL ──────────────────────────────────────────────────
+function formatSQL() {
+  const input = document.getElementById('sql-input').value.trim();
+  const output = document.getElementById('sql-output');
+  const errEl  = document.getElementById('sql-error');
+
+  showError('sql-error', '');
+  output.classList.remove('error');
+
+  if (!input) return;
+
+  const dialect  = document.getElementById('sql-dialect').value;
+  const upper    = document.getElementById('sql-uppercase').checked;
+  const indent   = document.getElementById('sql-indent2').checked ? '  ' : '    ';
+
+  try {
+    const result = sqlFormatter.format(input, {
+      language: dialect,
+      keywordCase: upper ? 'upper' : 'preserve',
+      indentStyle: 'standard',
+      tabWidth: indent.length,
+    });
+    output.value = result;
+    showStatus('sql-status', true, '整形完了');
+  } catch (e) {
+    output.value = '';
+    showError('sql-error', 'エラー: ' + e.message);
+    showStatus('sql-status', false, '失敗');
+  }
+}
+
+document.getElementById('sql-format-btn').addEventListener('click', formatSQL);
+document.getElementById('sql-input').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') formatSQL();
+});
+document.getElementById('sql-clear-btn').addEventListener('click', () => {
+  document.getElementById('sql-input').value = '';
+  document.getElementById('sql-output').value = '';
+  showError('sql-error', '');
+});
+document.getElementById('sql-copy-btn').addEventListener('click', () => {
+  copyText(document.getElementById('sql-output').value, 'sql-status');
+});
+document.getElementById('sql-paste-btn').addEventListener('click', () => {
+  pasteText('sql-input');
+});
+
+// ── JSON ─────────────────────────────────────────────────
+function tryUrlDecode(str) {
+  // URLエンコードされているか試みる（%XX が含まれていれば）
+  if (/%[0-9A-Fa-f]{2}/.test(str)) {
+    try { return decodeURIComponent(str); } catch { /* 失敗したら元のまま */ }
+  }
+  return str;
+}
+
+function sortObjectKeys(obj) {
+  if (Array.isArray(obj)) return obj.map(sortObjectKeys);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.keys(obj).sort().reduce((acc, k) => {
+      acc[k] = sortObjectKeys(obj[k]);
+      return acc;
+    }, {});
+  }
+  return obj;
+}
+
+function getIndent() {
+  const v = document.getElementById('json-indent').value;
+  return v === 'tab' ? '\t' : parseInt(v);
+}
+
+function doFormatJSON(minify = false) {
+  const rawInput = document.getElementById('json-input').value.trim();
+  const output   = document.getElementById('json-output');
+
+  showError('json-error', '');
+  output.classList.remove('error');
+
+  if (!rawInput) return;
+
+  const urlDecode = document.getElementById('json-urldecode').checked;
+  const sortKeys  = document.getElementById('json-sort').checked;
+
+  let text = urlDecode ? tryUrlDecode(rawInput) : rawInput;
+
+  try {
+    let parsed = JSON.parse(text);
+    if (sortKeys) parsed = sortObjectKeys(parsed);
+    output.value = minify
+      ? JSON.stringify(parsed)
+      : JSON.stringify(parsed, null, getIndent());
+    showStatus('json-status', true, minify ? '圧縮完了' : '整形完了');
+  } catch (e) {
+    output.value = '';
+    output.classList.add('error');
+    showError('json-error', 'JSONパースエラー: ' + e.message);
+    showStatus('json-status', false, '失敗');
+  }
+}
+
+function doUrlDecodeOnly() {
+  const rawInput = document.getElementById('json-input').value.trim();
+  const output   = document.getElementById('json-output');
+
+  showError('json-error', '');
+  if (!rawInput) return;
+
+  try {
+    output.value = decodeURIComponent(rawInput);
+    showStatus('json-status', true, 'デコード完了');
+  } catch (e) {
+    showError('json-error', 'URLデコードエラー: ' + e.message);
+    showStatus('json-status', false, '失敗');
+  }
+}
+
+document.getElementById('json-format-btn').addEventListener('click', () => doFormatJSON(false));
+document.getElementById('json-minify-btn').addEventListener('click', () => doFormatJSON(true));
+document.getElementById('json-urldecode-only-btn').addEventListener('click', doUrlDecodeOnly);
+document.getElementById('json-input').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') doFormatJSON(false);
+});
+document.getElementById('json-clear-btn').addEventListener('click', () => {
+  document.getElementById('json-input').value = '';
+  document.getElementById('json-output').value = '';
+  showError('json-error', '');
+});
+document.getElementById('json-copy-btn').addEventListener('click', () => {
+  copyText(document.getElementById('json-output').value, 'json-status');
+});
+document.getElementById('json-paste-btn').addEventListener('click', () => {
+  pasteText('json-input');
+});
+</script>
+</body>
+</html>
