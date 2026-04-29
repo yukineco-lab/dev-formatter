@@ -378,14 +378,6 @@
         <button class="dir-btn" data-dir="pg2ora">PostgreSQL → Oracle</button>
       </div>
       <label><input type="checkbox" id="conv-format"> 変換後に整形する</label>
-      <select id="conv-format-dialect" style="display:none">
-        <option value="postgresql" selected>PostgreSQL</option>
-        <option value="mysql">MySQL</option>
-        <option value="sql">標準SQL</option>
-        <option value="sqlite">SQLite</option>
-        <option value="oracle">Oracle</option>
-        <option value="transactsql">T-SQL (SQL Server)</option>
-      </select>
     </div>
 
     <div class="action-bar">
@@ -965,14 +957,7 @@ document.querySelectorAll('.dir-btn').forEach(btn => {
     document.querySelectorAll('.dir-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     convDirection = btn.dataset.dir;
-    // 変換先に合わせてデフォルト方言を切り替え
-    document.getElementById('conv-format-dialect').value =
-      convDirection === 'ora2pg' ? 'postgresql' : 'oracle';
   });
-});
-
-document.getElementById('conv-format').addEventListener('change', function () {
-  document.getElementById('conv-format-dialect').style.display = this.checked ? '' : 'none';
 });
 
 function doConvert() {
@@ -991,7 +976,7 @@ function doConvert() {
   }
 
   if (document.getElementById('conv-format').checked) {
-    const dialect = document.getElementById('conv-format-dialect').value;
+    const dialect = convDirection === 'ora2pg' ? 'postgresql' : 'oracle';
     try {
       sql = sqlFormatter.format(sql, { language: dialect, keywordCase: 'upper', indentStyle: 'standard', tabWidth: 4 });
       sql = postProcessJoinOn(sql);
