@@ -897,6 +897,10 @@ function convertOuterJoinFlat(sql) {
 // サブクエリを再帰的に処理してから自分の階層を変換
 function convertOuterJoin(sql) {
   if (!/\(\+\)/.test(sql)) return sql;
+  // 末尾のセミコロンを一時退避（WHERE条件の正規表現マッチを妨げないため）
+  const semiMatch = sql.match(/(\s*;+\s*)$/);
+  const trailSemi = semiMatch ? semiMatch[1] : '';
+  if (trailSemi) sql = sql.slice(0, -trailSemi.length);
   // Step1: 括弧内のサブクエリを再帰処理
   let out = ''; let i = 0;
   while (i < sql.length) {
@@ -909,8 +913,8 @@ function convertOuterJoin(sql) {
       i = cl + 1;
     } else out += sql[i++];
   }
-  // Step2: 現在の階層を変換
-  return convertOuterJoinFlat(out);
+  // Step2: 現在の階層を変換してセミコロンを復元
+  return convertOuterJoinFlat(out) + trailSemi;
 }
 
 const ORA2PG = [
