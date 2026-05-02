@@ -372,11 +372,20 @@
   <!-- 変換 Panel -->
   <div class="panel" id="tab-convert">
     <div class="options-row">
-      <span style="font-size:13px; color:var(--text-muted)">変換方向:</span>
-      <div class="dir-toggle">
-        <button class="dir-btn active" data-dir="ora2pg">Oracle → PostgreSQL</button>
-        <button class="dir-btn" data-dir="pg2ora">PostgreSQL → Oracle</button>
-      </div>
+      <span style="font-size:13px; color:var(--text-muted)">変換元:</span>
+      <select id="conv-src">
+        <option value="oracle" selected>Oracle</option>
+        <option value="postgresql">PostgreSQL</option>
+        <option value="mysql">MySQL</option>
+        <option value="sqlserver">SQL Server</option>
+      </select>
+      <span style="font-size:13px; color:var(--text-muted)">→ 変換先:</span>
+      <select id="conv-tgt">
+        <option value="oracle">Oracle</option>
+        <option value="postgresql" selected>PostgreSQL</option>
+        <option value="mysql">MySQL</option>
+        <option value="sqlserver">SQL Server</option>
+      </select>
       <label><input type="checkbox" id="conv-format"> 変換後に整形する</label>
     </div>
 
@@ -495,7 +504,7 @@ function formatSQL() {
 
   try {
     let result = sqlFormatter.format(input, {
-      language: dialect,
+      language: dialect === 'oracle' ? 'plsql' : (dialect === 'sqlserver' ? 'transactsql' : dialect),
       keywordCase: upper ? 'upper' : 'preserve',
       indentStyle: 'standard',
       tabWidth: indent.length,
@@ -935,52 +944,215 @@ function convertOuterJoin(sql) {
   return convertOuterJoinFlat(out) + trailSemi;
 }
 
-const ORA2PG = [
-  { d: 'DECODE → CASE WHEN ... END',         fn: convertDecode },
-  { d: 'NVL2 → CASE WHEN IS NOT NULL',        fn: convertNvl2 },
-  { d: 'NVL → COALESCE',                      fn: s => s.replace(/\bNVL\s*\(/gi, 'COALESCE(') },
-  { d: 'ADD_MONTHS → make_interval',           fn: convertAddMonths },
-  { d: 'SYSDATE → CURRENT_TIMESTAMP',         fn: s => s.replace(/\bSYSDATE\b/gi, 'CURRENT_TIMESTAMP') },
-  { d: 'SYSTIMESTAMP → CURRENT_TIMESTAMP',    fn: s => s.replace(/\bSYSTIMESTAMP\b/gi, 'CURRENT_TIMESTAMP') },
-  { d: 'FROM DUAL を削除',                    fn: s => s.replace(/\bFROM\s+DUAL\b/gi, '').replace(/,\s*DUAL\b/gi, '') },
-  { d: 'MINUS → EXCEPT',                      fn: s => s.replace(/\bMINUS\b/gi, 'EXCEPT') },
-  { d: 'VARCHAR2 → VARCHAR',                  fn: s => s.replace(/\bVARCHAR2\b/gi, 'VARCHAR') },
-  { d: 'NUMBER( → NUMERIC(',                  fn: s => s.replace(/\bNUMBER\b(?=\s*\()/gi, 'NUMERIC') },
-  { d: 'SUBSTR → SUBSTRING',                  fn: s => s.replace(/\bSUBSTR\s*\(/gi, 'SUBSTRING(') },
-  { d: 'INSTR → POSITION',                    fn: convertInstr },
-  { d: "seq.NEXTVAL → NEXTVAL('seq')",         fn: s => s.replace(/\b(\w+)\.NEXTVAL\b/gi, "NEXTVAL('$1')") },
-  { d: "seq.CURRVAL → CURRVAL('seq')",         fn: s => s.replace(/\b(\w+)\.CURRVAL\b/gi, "CURRVAL('$1')") },
-  { d: '(+) 外部結合 → LEFT OUTER JOIN',      fn: convertOuterJoin },
-];
+// ── 追加変換関数（MySQL / SQL Server 対応） ──
 
-const PG2ORA = [
-  { d: 'SUBSTRING → SUBSTR',                  fn: convertSubstring },
-  { d: 'POSITION → INSTR',                    fn: convertPosition },
-  { d: '::キャスト → CAST(x AS type)',        fn: s => s.replace(/\b(\w+)\s*::\s*(\w+)\b/g, 'CAST($1 AS $2)') },
-  { d: 'CURRENT_DATE → TRUNC(SYSDATE)',        fn: s => s.replace(/\bCURRENT_DATE\b/gi, 'TRUNC(SYSDATE)') },
-  { d: 'CURRENT_TIMESTAMP → SYSTIMESTAMP',    fn: s => s.replace(/\bCURRENT_TIMESTAMP\b/gi, 'SYSTIMESTAMP') },
-  { d: 'NOW() → SYSDATE',                     fn: s => s.replace(/\bNOW\s*\(\s*\)/gi, 'SYSDATE') },
-  { d: 'EXCEPT → MINUS',                      fn: s => s.replace(/\bEXCEPT\b/gi, 'MINUS') },
-  { d: 'LIMIT n → FETCH FIRST n ROWS ONLY',   fn: s => s.replace(/\bLIMIT\s+(\d+)\b/gi, 'FETCH FIRST $1 ROWS ONLY') },
-  { d: 'OFFSET n → OFFSET n ROWS',            fn: s => s.replace(/\bOFFSET\s+(\d+)\b/gi, 'OFFSET $1 ROWS') },
-  { d: 'VARCHAR → VARCHAR2',                  fn: s => s.replace(/\bVARCHAR\b(?!\s*2)/gi, 'VARCHAR2') },
-  { d: 'TEXT → VARCHAR2(4000)',               fn: s => s.replace(/\bTEXT\b/gi, 'VARCHAR2(4000)') },
-  { d: 'DATE_TRUNC → TRUNC',                  fn: s => s.replace(/\bDATE_TRUNC\s*\(\s*'[^']+'\s*,\s*([^)]+)\)/gi, 'TRUNC($1)') },
-  { d: "NEXTVAL('seq') → seq.NEXTVAL",        fn: s => s.replace(/\bNEXTVAL\s*\(\s*'(\w+)'\s*\)/gi, '$1.NEXTVAL') },
-  { d: "CURRVAL('seq') → seq.CURRVAL",        fn: s => s.replace(/\bCURRVAL\s*\(\s*'(\w+)'\s*\)/gi, '$1.CURRVAL') },
-  { d: 'ILIKE → UPPER() LIKE UPPER()',        fn: s => s.replace(/(\w+)\s+ILIKE\s+(\S+)/gi, 'UPPER($1) LIKE UPPER($2)') },
-  { d: 'TRUE/FALSE → 1/0',                    fn: s => s.replace(/\bTRUE\b/gi, '1').replace(/\bFALSE\b/gi, '0') },
-];
+// MySQL IF(cond, a, b) → CASE WHEN cond THEN a ELSE b END
+function convertMysqlIf(sql) {
+  const re = /\bIF\s*\(/gi; let m;
+  while ((m = re.exec(sql)) !== null) {
+    const cs = m.index + m[0].length;
+    const cl = findClose(sql, cs);
+    const args = splitArgs(sql.substring(cs, cl));
+    if (args.length === 3) {
+      sql = sql.slice(0, m.index) + `CASE WHEN ${args[0]} THEN ${args[1]} ELSE ${args[2]} END` + sql.slice(cl + 1);
+      re.lastIndex = m.index;
+    }
+  }
+  return sql;
+}
 
-let convDirection = 'ora2pg';
+// SQL Server IIF(cond, a, b) → CASE WHEN
+function convertIif(sql) {
+  const re = /\bIIF\s*\(/gi; let m;
+  while ((m = re.exec(sql)) !== null) {
+    const cs = m.index + m[0].length;
+    const cl = findClose(sql, cs);
+    const args = splitArgs(sql.substring(cs, cl));
+    if (args.length === 3) {
+      sql = sql.slice(0, m.index) + `CASE WHEN ${args[0]} THEN ${args[1]} ELSE ${args[2]} END` + sql.slice(cl + 1);
+      re.lastIndex = m.index;
+    }
+  }
+  return sql;
+}
 
-document.querySelectorAll('.dir-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.dir-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    convDirection = btn.dataset.dir;
-  });
-});
+// CHARINDEX(needle, haystack[, start]) → POSITION(needle IN haystack)
+function convertCharindex(sql) {
+  const re = /\bCHARINDEX\s*\(/gi; let m;
+  while ((m = re.exec(sql)) !== null) {
+    const cs = m.index + m[0].length;
+    const cl = findClose(sql, cs);
+    const args = splitArgs(sql.substring(cs, cl));
+    if (args.length >= 2) {
+      sql = sql.slice(0, m.index) + `POSITION(${args[0]} IN ${args[1]})` + sql.slice(cl + 1);
+      re.lastIndex = m.index;
+    }
+  }
+  return sql;
+}
+
+// POSITION(needle IN haystack) → CHARINDEX(needle, haystack)
+function convertPositionToCharindex(sql) {
+  const re = /\bPOSITION\s*\(/gi; let m;
+  while ((m = re.exec(sql)) !== null) {
+    const cs = m.index + m[0].length;
+    const cl = findClose(sql, cs);
+    const inner = sql.substring(cs, cl);
+    const im = inner.match(/^([\s\S]+?)\s+IN\s+([\s\S]+)$/i);
+    if (im) {
+      sql = sql.slice(0, m.index) + `CHARINDEX(${im[1].trim()}, ${im[2].trim()})` + sql.slice(cl + 1);
+      re.lastIndex = m.index;
+    }
+  }
+  return sql;
+}
+
+// PG SUBSTRING(s FROM pos [FOR len]) → カンマ区切り形式（SUBSTRING のまま）
+function convertSubstringFromFor(sql) {
+  const re = /\bSUBSTRING\s*\(/gi; let m;
+  while ((m = re.exec(sql)) !== null) {
+    const cs = m.index + m[0].length;
+    const cl = findClose(sql, cs);
+    const inner = sql.substring(cs, cl);
+    const m1 = inner.match(/^([\s\S]+?)\s+FROM\s+(\S+)\s+FOR\s+([\s\S]+)$/i);
+    const m2 = inner.match(/^([\s\S]+?)\s+FROM\s+([\s\S]+)$/i);
+    if (m1) {
+      sql = sql.slice(0, m.index) + `SUBSTRING(${m1[1].trim()}, ${m1[2].trim()}, ${m1[3].trim()})` + sql.slice(cl + 1);
+      re.lastIndex = m.index;
+    } else if (m2) {
+      sql = sql.slice(0, m.index) + `SUBSTRING(${m2[1].trim()}, ${m2[2].trim()})` + sql.slice(cl + 1);
+      re.lastIndex = m.index;
+    }
+  }
+  return sql;
+}
+
+// SQL Server: SELECT [DISTINCT] TOP n ... → SELECT [DISTINCT] ... LIMIT n
+function convertTopToLimit(sql) {
+  const re = /\bSELECT\s+(DISTINCT\s+)?TOP\s+(\d+)\s+/i;
+  const m = re.exec(sql);
+  if (!m) return sql;
+  const distinct = m[1] || '';
+  const n = m[2];
+  sql = sql.slice(0, m.index) + `SELECT ${distinct}` + sql.slice(m.index + m[0].length);
+  const semi = sql.match(/(\s*;+\s*)$/);
+  if (semi) sql = sql.slice(0, sql.length - semi[1].length) + `\nLIMIT ${n}` + semi[1];
+  else sql = sql + `\nLIMIT ${n}`;
+  return sql;
+}
+
+// LIMIT n → SELECT TOP n
+function convertLimitToTop(sql) {
+  const m = sql.match(/\s+LIMIT\s+(\d+)\s*(;?)\s*$/i);
+  if (!m) return sql;
+  const n = m[1], semi = m[2];
+  sql = sql.slice(0, m.index) + (semi || '');
+  return sql.replace(/\bSELECT\b\s+/i, `SELECT TOP ${n} `);
+}
+
+// ── DB別ルール ────────────────────────────────────────
+
+// 変換元ルール（ソースDB特有の構文を中間形式に正規化）
+const SRC_RULES = {
+  oracle: [
+    { d: 'DECODE → CASE WHEN',                  fn: convertDecode },
+    { d: 'NVL2 → CASE WHEN IS NOT NULL',        fn: convertNvl2 },
+    { d: 'NVL → COALESCE',                      fn: s => s.replace(/\bNVL\s*\(/gi, 'COALESCE(') },
+    { d: 'ADD_MONTHS → make_interval',          fn: convertAddMonths },
+    { d: 'SYSDATE → CURRENT_TIMESTAMP',         fn: s => s.replace(/\bSYSDATE\b/gi, 'CURRENT_TIMESTAMP') },
+    { d: 'SYSTIMESTAMP → CURRENT_TIMESTAMP',    fn: s => s.replace(/\bSYSTIMESTAMP\b/gi, 'CURRENT_TIMESTAMP') },
+    { d: 'FROM DUAL を削除',                    fn: s => s.replace(/\bFROM\s+DUAL\b/gi, '').replace(/,\s*DUAL\b/gi, '') },
+    { d: 'MINUS → EXCEPT',                      fn: s => s.replace(/\bMINUS\b/gi, 'EXCEPT') },
+    { d: 'VARCHAR2 → VARCHAR',                  fn: s => s.replace(/\bVARCHAR2\b/gi, 'VARCHAR') },
+    { d: 'NUMBER( → NUMERIC(',                  fn: s => s.replace(/\bNUMBER\b(?=\s*\()/gi, 'NUMERIC') },
+    { d: 'SUBSTR → SUBSTRING',                  fn: s => s.replace(/\bSUBSTR\s*\(/gi, 'SUBSTRING(') },
+    { d: 'INSTR → POSITION',                    fn: convertInstr },
+    { d: "seq.NEXTVAL → NEXTVAL('seq')",        fn: s => s.replace(/\b(\w+)\.NEXTVAL\b/gi, "NEXTVAL('$1')") },
+    { d: "seq.CURRVAL → CURRVAL('seq')",        fn: s => s.replace(/\b(\w+)\.CURRVAL\b/gi, "CURRVAL('$1')") },
+    { d: '(+) 外部結合 → LEFT/RIGHT OUTER JOIN', fn: convertOuterJoin },
+  ],
+  postgresql: [
+    { d: '::キャスト → CAST(x AS type)',        fn: s => s.replace(/\b(\w+)\s*::\s*(\w+)\b/g, 'CAST($1 AS $2)') },
+    { d: 'SUBSTRING FROM/FOR → カンマ区切り',   fn: convertSubstringFromFor },
+    { d: 'NOW() → CURRENT_TIMESTAMP',           fn: s => s.replace(/\bNOW\s*\(\s*\)/gi, 'CURRENT_TIMESTAMP') },
+    { d: 'ILIKE → LIKE (大小区別が失われます)',  fn: s => s.replace(/\bILIKE\b/gi, 'LIKE') },
+  ],
+  mysql: [
+    { d: 'バックティック`x` → "x"',             fn: s => s.replace(/`([^`]+)`/g, '"$1"') },
+    { d: 'IFNULL → COALESCE',                   fn: s => s.replace(/\bIFNULL\s*\(/gi, 'COALESCE(') },
+    { d: 'IF(cond,a,b) → CASE WHEN',            fn: convertMysqlIf },
+    { d: 'AUTO_INCREMENT を削除',               fn: s => s.replace(/\s*\bAUTO_INCREMENT\b/gi, '') },
+    { d: 'NOW() → CURRENT_TIMESTAMP',           fn: s => s.replace(/\bNOW\s*\(\s*\)/gi, 'CURRENT_TIMESTAMP') },
+    { d: 'CURDATE() → CURRENT_DATE',            fn: s => s.replace(/\bCURDATE\s*\(\s*\)/gi, 'CURRENT_DATE') },
+    { d: 'CURTIME() → CURRENT_TIME',            fn: s => s.replace(/\bCURTIME\s*\(\s*\)/gi, 'CURRENT_TIME') },
+    { d: 'LIMIT m,n → LIMIT n OFFSET m',        fn: s => s.replace(/\bLIMIT\s+(\d+)\s*,\s*(\d+)\b/gi, 'LIMIT $2 OFFSET $1') },
+    { d: 'TINYINT(1) → BOOLEAN',                fn: s => s.replace(/\bTINYINT\s*\(\s*1\s*\)/gi, 'BOOLEAN') },
+  ],
+  sqlserver: [
+    { d: 'ブラケット[x] → "x"',                 fn: s => s.replace(/\[([^\]]+)\]/g, '"$1"') },
+    { d: 'ISNULL → COALESCE',                   fn: s => s.replace(/\bISNULL\s*\(/gi, 'COALESCE(') },
+    { d: 'IIF → CASE WHEN',                     fn: convertIif },
+    { d: 'GETDATE() → CURRENT_TIMESTAMP',       fn: s => s.replace(/\bGETDATE\s*\(\s*\)/gi, 'CURRENT_TIMESTAMP') },
+    { d: 'SYSUTCDATETIME() → CURRENT_TIMESTAMP', fn: s => s.replace(/\bSYSUTCDATETIME\s*\(\s*\)/gi, 'CURRENT_TIMESTAMP') },
+    { d: 'LEN → LENGTH',                        fn: s => s.replace(/\bLEN\s*\(/gi, 'LENGTH(') },
+    { d: 'CHARINDEX → POSITION',                fn: convertCharindex },
+    { d: 'VARCHAR(MAX)/NVARCHAR(MAX) → TEXT',   fn: s => s.replace(/\bN?VARCHAR\s*\(\s*MAX\s*\)/gi, 'TEXT') },
+    { d: 'BIT → BOOLEAN',                       fn: s => s.replace(/\bBIT\b/gi, 'BOOLEAN') },
+    { d: 'TOP n → LIMIT n',                     fn: convertTopToLimit },
+  ],
+};
+
+// 変換先ルール（中間形式をターゲットDB特有の構文に整える）
+const TGT_RULES = {
+  oracle: [
+    { d: 'CURRENT_DATE → TRUNC(SYSDATE)',       fn: s => s.replace(/\bCURRENT_DATE\b/gi, 'TRUNC(SYSDATE)') },
+    { d: 'CURRENT_TIMESTAMP → SYSTIMESTAMP',    fn: s => s.replace(/\bCURRENT_TIMESTAMP\b/gi, 'SYSTIMESTAMP') },
+    { d: 'EXCEPT → MINUS',                      fn: s => s.replace(/\bEXCEPT\b/gi, 'MINUS') },
+    { d: 'LIMIT n → FETCH FIRST n ROWS ONLY',   fn: s => s.replace(/\bLIMIT\s+(\d+)\b/gi, 'FETCH FIRST $1 ROWS ONLY') },
+    { d: 'OFFSET n → OFFSET n ROWS',            fn: s => s.replace(/\bOFFSET\s+(\d+)\b(?!\s*ROWS)/gi, 'OFFSET $1 ROWS') },
+    { d: 'VARCHAR → VARCHAR2',                  fn: s => s.replace(/\bVARCHAR\b(?!\s*2)/gi, 'VARCHAR2') },
+    { d: 'TEXT → VARCHAR2(4000)',               fn: s => s.replace(/\bTEXT\b/gi, 'VARCHAR2(4000)') },
+    { d: 'DATE_TRUNC → TRUNC',                  fn: s => s.replace(/\bDATE_TRUNC\s*\(\s*'[^']+'\s*,\s*([^)]+)\)/gi, 'TRUNC($1)') },
+    { d: "NEXTVAL('seq') → seq.NEXTVAL",        fn: s => s.replace(/\bNEXTVAL\s*\(\s*'(\w+)'\s*\)/gi, '$1.NEXTVAL') },
+    { d: "CURRVAL('seq') → seq.CURRVAL",        fn: s => s.replace(/\bCURRVAL\s*\(\s*'(\w+)'\s*\)/gi, '$1.CURRVAL') },
+    { d: 'POSITION → INSTR',                    fn: convertPosition },
+    { d: 'SUBSTRING → SUBSTR',                  fn: convertSubstring },
+    { d: 'BOOLEAN → NUMBER(1)',                 fn: s => s.replace(/\bBOOLEAN\b/gi, 'NUMBER(1)') },
+    { d: 'TRUE/FALSE → 1/0',                    fn: s => s.replace(/\bTRUE\b/gi, '1').replace(/\bFALSE\b/gi, '0') },
+  ],
+  postgresql: [
+    // ソース側で PG ライクな中間形式に正規化済みのため、ほぼ何もしない
+  ],
+  mysql: [
+    { d: 'CURRENT_TIMESTAMP → NOW()',           fn: s => s.replace(/\bCURRENT_TIMESTAMP\b/gi, 'NOW()') },
+    { d: 'CURRENT_DATE → CURDATE()',            fn: s => s.replace(/\bCURRENT_DATE\b/gi, 'CURDATE()') },
+    { d: 'CURRENT_TIME → CURTIME()',            fn: s => s.replace(/\bCURRENT_TIME\b/gi, 'CURTIME()') },
+    { d: 'VARCHAR2 → VARCHAR',                  fn: s => s.replace(/\bVARCHAR2\b/gi, 'VARCHAR') },
+    { d: 'BOOLEAN → TINYINT(1)',                fn: s => s.replace(/\bBOOLEAN\b/gi, 'TINYINT(1)') },
+    { d: 'EXCEPT は MySQL 非対応（要書換）',     fn: s => s.replace(/\bEXCEPT\b(?!\s*\/\*)/gi, '/* MySQL: EXCEPT非対応 NOT IN/NOT EXISTS で書き換え */ EXCEPT') },
+    { d: 'TRUE/FALSE → 1/0',                    fn: s => s.replace(/\bTRUE\b/gi, '1').replace(/\bFALSE\b/gi, '0') },
+  ],
+  sqlserver: [
+    { d: 'CURRENT_TIMESTAMP → GETDATE()',       fn: s => s.replace(/\bCURRENT_TIMESTAMP\b/gi, 'GETDATE()') },
+    { d: 'CURRENT_DATE → CAST(GETDATE() AS DATE)', fn: s => s.replace(/\bCURRENT_DATE\b/gi, 'CAST(GETDATE() AS DATE)') },
+    { d: 'VARCHAR2 → VARCHAR',                  fn: s => s.replace(/\bVARCHAR2\b/gi, 'VARCHAR') },
+    { d: 'TEXT → VARCHAR(MAX)',                 fn: s => s.replace(/\bTEXT\b/gi, 'VARCHAR(MAX)') },
+    { d: 'LENGTH → LEN',                        fn: s => s.replace(/\bLENGTH\b/gi, 'LEN') },
+    { d: 'POSITION → CHARINDEX',                fn: convertPositionToCharindex },
+    { d: 'BOOLEAN → BIT',                       fn: s => s.replace(/\bBOOLEAN\b/gi, 'BIT') },
+    { d: 'TRUE/FALSE → 1/0',                    fn: s => s.replace(/\bTRUE\b/gi, '1').replace(/\bFALSE\b/gi, '0') },
+    { d: 'LIMIT n → SELECT TOP n',              fn: convertLimitToTop },
+  ],
+};
+
+// 整形時の sql-formatter 言語キー
+function getFormatLang(db) {
+  if (db === 'oracle')    return 'plsql';
+  if (db === 'sqlserver') return 'transactsql';
+  return db; // postgresql / mysql
+}
+
+const DB_LABELS = { oracle: 'Oracle', postgresql: 'PostgreSQL', mysql: 'MySQL', sqlserver: 'SQL Server' };
 
 function doConvert() {
   const input  = document.getElementById('conv-input').value.trim();
@@ -988,22 +1160,31 @@ function doConvert() {
   showError('conv-error', '');
   if (!input) return;
 
-  const rules = convDirection === 'ora2pg' ? ORA2PG : PG2ORA;
+  const src = document.getElementById('conv-src').value;
+  const tgt = document.getElementById('conv-tgt').value;
+
   let sql = input;
   const applied = [];
-  for (const rule of rules) {
-    const before = sql;
-    try { sql = rule.fn(sql); } catch { /* 変換失敗はスキップ */ }
-    if (sql !== before) applied.push(rule.d);
+
+  if (src !== tgt) {
+    for (const rule of (SRC_RULES[src] || [])) {
+      const before = sql;
+      try { sql = rule.fn(sql); } catch { /* スキップ */ }
+      if (sql !== before) applied.push(`[${DB_LABELS[src]}] ${rule.d}`);
+    }
+    for (const rule of (TGT_RULES[tgt] || [])) {
+      const before = sql;
+      try { sql = rule.fn(sql); } catch { /* スキップ */ }
+      if (sql !== before) applied.push(`[→${DB_LABELS[tgt]}] ${rule.d}`);
+    }
   }
 
   if (document.getElementById('conv-format').checked) {
-    const dialect = convDirection === 'ora2pg' ? 'postgresql' : 'oracle';
     try {
-      sql = sqlFormatter.format(sql, { language: dialect, keywordCase: 'upper', indentStyle: 'standard', tabWidth: 4 });
+      sql = sqlFormatter.format(sql, { language: getFormatLang(tgt), keywordCase: 'upper', indentStyle: 'standard', tabWidth: 4 });
       sql = postProcessJoinOn(sql);
       applied.push('SQL整形');
-    } catch { /* 整形失敗はスキップ */ }
+    } catch { /* スキップ */ }
   }
 
   output.value = sql;
@@ -1014,6 +1195,9 @@ function doConvert() {
     logDiv.style.display = 'block';
     logList.innerHTML = applied.map(d => `<div class="log-item">${d}</div>`).join('');
     showStatus('conv-status', true, `${applied.length}件変換`);
+  } else if (src === tgt) {
+    logDiv.style.display = 'none';
+    showStatus('conv-status', false, '変換元と変換先が同じです');
   } else {
     logDiv.style.display = 'none';
     showStatus('conv-status', true, '変換対象なし');
