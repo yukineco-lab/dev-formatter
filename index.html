@@ -924,6 +924,8 @@ function convertOuterJoinFlat(sql) {
 // サブクエリを再帰的に処理してから自分の階層を変換
 function convertOuterJoin(sql) {
   if (!/\(\+\)/.test(sql)) return sql;
+  // (+)col 形式を col(+) 形式に正規化（記述揺れ対応）
+  sql = sql.replace(/\(\+\)\s*(\w+\.\w+)/g, '$1(+)');
   // 末尾のセミコロンを一時退避（WHERE条件の正規表現マッチを妨げないため）
   const semiMatch = sql.match(/(\s*;+\s*)$/);
   const trailSemi = semiMatch ? semiMatch[1] : '';
